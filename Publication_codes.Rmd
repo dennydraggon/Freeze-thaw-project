@@ -1,0 +1,904 @@
+---
+title: "Publication_code1"
+author: "Denise Mondragon"
+date: "2024-07-25"
+output: html_document
+---
+
+## Installing packages and loading dataframes
+```{r}
+#Installing Packages
+# install.packages("stats")
+# install.packages("readxl")
+# install.packages("dplyr")
+# install.packages("ggplot2")
+# install.packages("PMCMRplus")
+# install.packages("pgirmess")
+# install.packages("rstatix")
+# install.packages("DescTools")
+# install.packages("grid")
+# install.packages("reshape2")
+
+library(grid)
+library(stats)
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(dunn.test)
+library(PMCMRplus)
+library(scales)
+library(ggtern)
+library(pgirmess)
+library(reshape2)
+library(tidyr)
+library(gridExtra)
+library(ggpubr)
+
+## Importing excel sheet for all data
+df_all <- read_excel("C:/Users/denis/OneDrive - UCB-O365/R_directory/R_data/all_data.xlsx")
+df_pcontrols <- read_excel("C:/Users/denis/OneDrive - UCB-O365/R_directory/R_data/p_controls.xlsx")
+df_rcontrols <- read_excel("C:/Users/denis/OneDrive - UCB-O365/R_directory/R_data/r_controls.xlsx")
+
+```
+
+#Nutrients plots
+```{r}
+library(ggplot2)
+install.packages(cowplot)
+library(cowplot)
+
+# List of nutrients (micromol is per g)
+nutrients <- c("nitrate_micromol", "ammonia_micromol", "phosphate_micromol")
+
+# Custom color palette
+custom_colors <- c("0" = "#99d594", "1" = "#66c2a5", "5" = "#41ae76", "10" = "#238b45", "30" = "#006d2c", "60" = "#00441b")
+
+# Nutrient names with subscripts and superscripts
+nutrient_names <- list(
+  nitrate_micromol = expression(bold(NO[3]^{"-"} + NO[2]^{"-"})),
+  ammonia_micromol = expression(bold(NH[3]^{"-"})),
+  phosphate_micromol = expression(bold(PO[4]^{"3-"}))
+)
+
+# Max values for IL
+# manual_ymax_values <- c(
+#   nitrate_micromol = 0.5,
+#   ammonia_micromol = 0.15,
+#   phosphate_micromol = 0.100
+# )
+
+# Max values for FL
+manual_ymax_values <- c(
+  nitrate_micromol = 0.3,
+  ammonia_micromol = 0.6,
+  phosphate_micromol = 0.5
+)
+
+# Function to create the stacked bar plot for each nutrient across 4 locations
+plot_stacked_bar <- function(nutrient, df_all, ymax) {
+  # Filter the dataframe for the specified nutrient
+  df_nutrient <- df_all[df_all$method == "INC", c("original_ID", "freeze_thaw", "location_2", nutrient)]
+  names(df_nutrient)[4] <- "value"
+  
+  # Remove N/A levels from freeze_thaw and locations that are NA or "blank"
+  df_nutrient <- df_nutrient[!is.na(df_nutrient$freeze_thaw) & !is.na(df_nutrient$location_2) & df_nutrient$location_2 != "blank" & df_nutrient$freeze_thaw != "0", ]
+  
+  # Aggregate the data by original_ID, freeze_thaw, and location
+  agg_data <- aggregate(value ~ original_ID + freeze_thaw + location_2, 
+                        data = df_nutrient, 
+                        FUN = function(x) mean(x, na.rm = TRUE)) # Calculate mean ignoring NA values
+  
+  # Make sure freeze_thaw and location are in the order you want
+  agg_data$freeze_thaw <- factor(agg_data$freeze_thaw, levels = c("60", "30", "10", "5", "1", "0"))
+  agg_data$location_2 <- factor(agg_data$location_2, levels = c("TG", "ELB", "F6", "EC"))
+  
+  # Change the width of bars based on the number of bars (original_IDs)
+  num_bars <- length(unique(agg_data$original_ID))
+  bar_width <- min(0.7, 6 / num_bars) 
+  
+  # Creating stacked bar plot
+  p <- ggplot(agg_data, aes(x = interaction(original_ID, location_2), y = value, fill = freeze_thaw)) +
+    geom_bar(stat = "identity", position = "stack", width = bar_width, color = "black", size = 0.5) +
+    scale_fill_manual(values = custom_colors, name = "Freeze-Thaw") +
+    labs(fill = "Freeze-Thaw") +
+    ggtitle(nutrient_names[[nutrient]]) + # Title for nutrients using the expressions
+    theme_minimal(base_size = 15) +
+    theme(
+      axis.text.x = element_text(vjust = 0.5, hjust = 1, angle = 90, color = "black"),
+      axis.text.y = element_text(color = "black"),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none", # Hide legend for individual plots
+      plot.title = element_text(hjust = 0.5, face = "bold"), # Center and bold titles
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1) # Black border around each plot for aesthetic
+    ) +
+    ylim(0, ymax) +
+    scale_x_discrete(labels = function(x) {
+  sapply(strsplit(x, "\\."), function(y) y[2])
+})
+  
+  return(p)
+}
+
+
+# Generate plots with specific ymax for each nutrient
+plots_by_nutrient <- list()
+for (nutrient in nutrients) {
+  ymax <- manual_ymax_values[[nutrient]]
+  plots_by_nutrient[[nutrient]] <- plot_stacked_bar(nutrient, df_all, ymax)
+}
+
+
+# Empty plot added to add a space in the left margin and bottom margin
+empty_plot_left <- ggplot() + theme_void()
+empty_plot_bottom <- ggplot() + theme_void()
+
+# Combining all plots into one figure with a shared legend, split into two columns
+combined_plot <- plot_grid(
+  plotlist = plots_by_nutrient, 
+  ncol = 1, 
+  align = 'v', 
+  axis = 'lr',
+  label_size = 20,
+  rel_heights = rep(1, length(nutrients) / 2),
+  label_y = 1.05,
+  label_x = 0.1
+)
+
+# Final plot with the empty plot as a spacer on the left
+final_plot_with_margin <- plot_grid(
+  plot_grid(empty_plot_left, combined_plot, ncol = 2, rel_widths = c(0.1, 2)), 
+  plot_grid(empty_plot_bottom, ncol = 1, rel_widths = c(0.6, 0.4)), 
+  ncol = 1,
+  rel_heights = c(2, 0.1)
+) +
+  draw_label(expression(bold("Concentration (µmol g"^-1*")")), x = 0.02, y = 0.5, vjust = .7, angle = 90, size = 20) +
+  draw_label(expression(bold("Location")), x = 0.5, y = 0.02, vjust = -0.5, size = 20)
+
+ggsave(final_plot_with_margin, file = "Nutrient_plots.png", dpi = 600, width = 18, height = 24, units = "cm")
+# Print the combined plot
+print(final_plot_with_margin)
+```
+
+#Ions plots
+```{r}
+library(ggplot2)
+library(cowplot)
+
+# List of locations and ions
+locations <- c("TG", "ELB", "F6", "EC")
+ions <- c("fluoride_micromol", "chloride_micromol", "sulfate_micromol", "Ca_micromol", "K_micromol", "Mg_micromol", "Na_micromol")
+
+# Define a custom color palette
+custom_colors <- c("0" = "#99d594", "1" = "#66c2a5", "5" = "#41ae76", "10" = "#238b45", "30" = "#006d2c", "60" = "#00441b")
+
+# Define ion names with subscripts and superscripts
+ion_names <- list(
+  fluoride_micromol = expression(bold(F^{"-"})),
+  chloride_micromol = expression(bold(Cl^{"-"})),
+  sulfate_micromol = expression(bold(SO[4]^{"2-"})),
+  Ca_micromol = expression(bold(Ca^{"2+"})),
+  K_micromol = expression(bold(K^{"+"})),
+  Mg_micromol = expression(bold(Mg^{"2+"})),
+  Na_micromol = expression(bold(Na^{"+"}))
+)
+
+# # Define manual ylim values for each ion
+manual_ymax_values <- c(
+   fluoride_micromol = 0.7,   # Adjust as needed
+   chloride_micromol = 50,
+   sulfate_micromol = 10,
+   Ca_micromol = 25,
+   K_micromol = 6,
+   Mg_micromol = 8,
+   Na_micromol = 40
+ )
+
+# # Define manual ylim values for each ion
+# manual_ymax_values <- c(
+#   fluoride_micromol = 0.7,   # Adjust as needed
+#   chloride_micromol = 10,
+#   sulfate_micromol = 2,
+#   Ca_micromol = 20,
+#   K_micromol = 5,
+#   Mg_micromol = 6,
+#   Na_micromol = 40
+# )
+
+# Updated plot function to accept manual ymax
+plot_stacked_bar <- function(ion, df_all, ymax) {
+  df_ion <- df_all[df_all$method %in% c("INC", "TC"), c("original_ID", "freeze_thaw", "location_2", ion)]
+  names(df_ion)[4] <- "value"
+  
+  # Filter out NA levels for freeze_thaw, locations, and unwanted values
+  df_ion <- df_ion[!is.na(df_ion$freeze_thaw) & !is.na(df_ion$location_2) & df_ion$location_2 != "blank" & df_ion$freeze_thaw == "0", ]
+  
+  # Aggregate the data by original_ID, freeze_thaw, and location
+  agg_data <- aggregate(value ~ original_ID + freeze_thaw + location_2, 
+                        data = df_ion, 
+                        FUN = function(x) mean(x, na.rm = TRUE)) 
+  
+  agg_data$freeze_thaw <- factor(agg_data$freeze_thaw, levels = c("60", "30", "10", "5", "1", "0"))
+  agg_data$location_2 <- factor(agg_data$location_2, levels = locations)
+  
+  num_bars <- length(unique(agg_data$original_ID))
+  bar_width <- min(0.7, 6 / num_bars)  
+  
+  p <- ggplot(agg_data, aes(x = interaction(original_ID, location_2), y = value, fill = freeze_thaw)) +
+    geom_bar(stat = "identity", position = "stack", width = bar_width, color = "black", size = 0.5) +
+    scale_fill_manual(values = custom_colors, name = "Freeze-Thaw") +
+    labs(fill = "Freeze-Thaw") +
+    ggtitle(ion_names[[ion]]) +
+    theme_minimal(base_size = 15) +
+    theme(
+      axis.text.x = element_text(vjust = 0.5, hjust = 1, angle = 90, color = "black"),
+      axis.text.y = element_text(color = "black"),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none",
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1)
+    ) +
+    ylim(0, ymax) +
+    scale_x_discrete(labels = function(x) {
+     sapply(strsplit(x, "\\."), function(y) y[2])
+})
+    #    sapply(strsplit(x, "\\."), function(y) paste(y[1], y[2], sep = ":"))
+    # })
+  
+  return(p)
+}
+
+# Generate plots with specific ymax for each ion
+plots_by_ion <- list()
+for (ion in ions) {
+  ymax <- manual_ymax_values[[ion]]
+  plots_by_ion[[ion]] <- plot_stacked_bar(ion, df_all, ymax)
+}
+# Create an empty plot for the left margin and bottom margin
+empty_plot_left <- ggplot() + theme_void()
+empty_plot_bottom <- ggplot() + theme_void()
+
+# Combine all plots into one figure with a shared legend, split into two columns
+combined_plot <- plot_grid(
+  plotlist = plots_by_ion, 
+  ncol = 2, 
+  align = 'v', 
+  axis = 'lr',
+  label_size = 20,
+  rel_heights = rep(1, length(ions) / 2),
+  label_y = 1.05,
+  label_x = 0.1
+)
+
+# # Create the legend with two columns
+# legend <- get_legend(
+#   plots_by_ion[[1]] + 
+#     theme(legend.position = "bottom", legend.box = "vertical") +
+#     guides(fill = guide_legend(ncol = 2))
+# )
+
+# Create the final plot with the empty plot as a spacer on the left
+final_plot_with_margin <- plot_grid(
+  plot_grid(empty_plot_left, combined_plot, ncol = 2, rel_widths = c(0.1, 2)), # Adjust rel_widths for spacing
+  plot_grid(empty_plot_bottom, ncol = 1, rel_widths = c(0.6, 0.4)), # Adjust rel_widths for spacing
+  ncol = 1,
+  rel_heights = c(2, 0.1)
+) +
+  draw_label(expression(bold("Concentration (µmol g"^-1*")")), x = 0.02, y = 0.5, vjust = .7, angle = 90, size = 20) +
+  draw_label(expression(bold("Location")), x = 0.5, y = 0.02, vjust = -0.5, size = 20)
+
+ggsave(final_plot_with_margin, file = "ion_plots.png", dpi = 600, width = 18, height = 24, units = "cm")
+# Print the combined plot
+print(final_plot_with_margin)
+
+```
+
+#Trace Metals plots
+```{r}
+library(ggplot2)
+library(cowplot)
+
+# List of locations and metals
+locations <- c("TG", "ELB", "F6", "EC")
+metals <- c("Al_nanomol", "Cu_nanomol", "Fe_nanomol", "Mn_nanomol", "Si_nanomol", "Sr_nanomol", "V_nanomol", "Zn_nanomol")
+
+# Define a custom color palette
+custom_colors <- c("0" = "#99d594", "1" = "#66c2a5", "5" = "#41ae76", "10" = "#238b45", "30" = "#006d2c", "60" = "#00441b")
+
+# Define metal names with subscripts and superscripts
+metal_names <- list(
+  Al_nanomol = expression(bold(Al)),
+  Cu_nanomol = expression(bold(Cu)),
+  Fe_nanomol = expression(bold(Fe)),
+  Mn_nanomol = expression(bold(Mn)),
+  Si_nanomol = expression(bold(Si)),
+  Sr_nanomol = expression(bold(Sr)),
+  V_nanomol = expression(bold(V)),
+  Zn_nanomol = expression(bold(Zn))
+)
+
+# # Define manual ylim values for each ion
+# manual_ymax_values <- c(
+#   Al_nanomol = 6000,   # Adjust as needed
+#   Co_nanomol = 40,
+#   Cu_nanomol = 10,
+#   Fe_nanomol = 2000,
+#   Mn_nanomol = 150,
+#   Pb_nanomol = 30,
+#   Si_nanomol = 8000,
+#   Sr_nanomol = 150,
+#   V_nanomol = 30,
+#   Zn_nanomol = 600
+# )
+
+# Define manual ylim values for each ion
+manual_ymax_values <- c(
+  Al_nanomol = 600,   # Adjust as needed
+  Cu_nanomol = 5,
+  Fe_nanomol = 80,
+  Mn_nanomol = 40,
+  Si_nanomol = 5000,
+  Sr_nanomol = 75,
+  V_nanomol = 40,
+  Zn_nanomol = 20
+)
+
+# Function to create the stacked bar plot for each metal across locations
+plot_stacked_bar <- function(metal, df_all,ymax) {
+  # Filter the dataframe for the specified metal
+  df_metal <- df_all[df_all$method %in% c("INC", "TC"), c("original_ID", "freeze_thaw", "location_2", metal)]
+  names(df_metal)[4] <- "value"
+  
+  # Remove N/A levels from freeze_thaw and locations that are NA or "blank"
+  df_metal <- df_metal[!is.na(df_metal$freeze_thaw) & !is.na(df_metal$location_2) & df_metal$location_2 != "blank" & df_metal$freeze_thaw != "0", ]
+  
+  # Aggregate the data by original_ID, freeze_thaw, and location
+  agg_data <- aggregate(value ~ original_ID + freeze_thaw + location_2, 
+                        data = df_metal, 
+                        FUN = function(x) mean(x, na.rm = TRUE)) # Calculate mean ignoring NA values
+  
+  # Ensure freeze_thaw and location is a factor with the correct order
+  agg_data$freeze_thaw <- factor(agg_data$freeze_thaw, levels = c("60", "30", "10", "5", "1", "0"))
+  agg_data$location_2 <- factor(agg_data$location_2, levels = locations)
+  
+  # Determine the width of bars based on the number of bars (original_IDs)
+  num_bars <- length(unique(agg_data$original_ID))
+  bar_width <- min(0.7, 6 / num_bars)  # Adjusted width calculation
+  
+  # Create the stacked bar plot
+  p <- ggplot(agg_data, aes(x = interaction(original_ID, location_2), y = value, fill = freeze_thaw)) +
+    geom_bar(stat = "identity", position = "stack", width = bar_width, color = "black", size = 0.5) +
+    scale_fill_manual(values = custom_colors, name = "Freeze-Thaw") +
+    labs(fill = "Freeze-Thaw") +
+    ggtitle(metal_names[[metal]]) + # Title with expression
+    theme_minimal(base_size = 15) +
+    theme(
+      # axis.line = element_line(color = "black"),
+      axis.text.x = element_text(vjust = 0.5, hjust = 1, angle = 90, color = "black"),
+      axis.text.y = element_text(color = "black"),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none", # Hide legend for individual plots
+      plot.title = element_text(hjust = 0.5, face = "bold"), # Center and bold titles
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1) # Add black border around each plot
+    ) +
+    ylim(0, ymax) +
+     scale_x_discrete(labels = function(x) {
+       sapply(strsplit(x, "\\."), function(y) y[2])
+})
+    # scale_x_discrete(labels = function(x) { # This part fo the code will take off the colon and only include the location code.
+    #    sapply(strsplit(x, "\\."), function(y) y[2])
+    #  })
+  
+  return(p)
+}
+
+# Generate plots with specific ymax for each metal
+plots_by_metal <- list()
+for (metal in metals) {
+  ymax <- manual_ymax_values[[metal]]
+  plots_by_metal[[metal]] <- plot_stacked_bar(metal, df_all, ymax)
+}
+
+# Create an empty plot for the left margin and bottom margin
+empty_plot_left <- ggplot() + theme_void()
+empty_plot_bottom <- ggplot() + theme_void()
+
+# Combine all plots into one figure with a shared legend, split into two columns
+combined_plot <- plot_grid(
+  plotlist = plots_by_metal, 
+  ncol = 3, 
+  align = 'v', 
+  axis = 'lr',
+  label_size = 20,
+  rel_heights = rep(1, length(metals) / 2),
+  label_y = 1.05,
+  label_x = 0.1
+)
+
+
+# Create the final plot with the empty plot as a spacer on the left
+final_plot_with_margin <- plot_grid(
+  plot_grid(empty_plot_left, combined_plot, ncol = 2, rel_widths = c(0.1, 2)), # Adjust rel_widths for spacing
+  plot_grid(empty_plot_bottom, ncol = 1, rel_widths = c(0.6, 0.4)), # Adjust rel_widths for spacing
+  ncol = 1,
+  rel_heights = c(2, 0.1)
+) +
+  draw_label(expression(bold("Concentration (nmol g"^-1*")")), x = 0.02, y = 0.5, vjust = .7, angle = 90, size = 20) +
+  draw_label(expression(bold("Location")), x = 0.5, y = 0.02, vjust = -0.5, size = 20)
+
+ggsave(final_plot_with_margin, file = "metal_plots.png", dpi = 600, width = 18, height = 24, units = "cm")
+# Print the combined plot
+print(final_plot_with_margin)
+```
+
+## Bicarbonate code: 
+```{r}
+# Bicarb calculation: only using major cations and not the others because they are probably not in solution in a simple ionic form, so they don’t contribute to the charge balance in the same way that Na, K, Mg, Ca and Sr do. (Kathy Welch 2010 Recommendation)
+valence <- c(Ca = 2, K = 1, Mg = 2, Na = 1, Sr = 2)
+
+# Only use the relevant columns from the dataframe 
+ion_cols <- c("Ca_micromol", "K_micromol", "Mg_micromol", "Na_micromol", "Sr_micromol")
+
+# Calculate the total positive charge for each row, ignoring NA cells
+df_ICP_TC$total_positive_charge <- rowSums(sapply(ion_cols, function(col) df_ICP_TC[[col]] * charges[sub("_micromol", "", col)]), na.rm = TRUE)
+
+# Calculating equivalents into a new column with mutate 
+df_ICP_TC <- df_ICP_TC %>%
+  mutate(Ca_mval = (Ca_micromol/1000) * (1/valence["Ca"]),
+         K_mval = (K_micromol/1000) * (1/valence["K"]),
+         Mg_mval = (Mg_micromol/1000) * (1/valence["Mg"]),
+         Na_mval = (Na_micromol/1000) * (1/valence["Na"]),
+         Sr_mval = (Sr_micromol/1000) * (1/valence["Sr"]))
+
+################################################################################
+
+## IC DATA
+# Bicarb Calculation
+valence <- c(fluoride_micromol = 1, chloride_micromol = 1, sulfate_micromol = 2, nitrate_micromol = 1)
+
+anion_cols <- c("fluoride_micromol", "chloride_micromol", "sulfate_micromol", "nitrate_micromol")
+
+df_IC_INC$total_negative_charge <- rowSums(sapply(anion_cols, function(col) df_IC_INC[[col]] * charges[col]), na.rm = TRUE)
+
+df_IC_INC <- df_IC_INC %>%
+  mutate(fluoride_mval = (fluoride_micromol/1000) * (1/valence["fluoride_micromol"]),
+         chloride_mval = (chloride_micromol/1000) * (1/valence["chloride_micromol"]),
+         sulfate_mval = (sulfate_micromol/1000) * (1/valence["sulfate_micromol"]),
+         nitrate_mval = (nitrate_micromol/1000) * (1/valence["nitrate_micromol"]))
+
+################################################################################
+
+## Merged Dataframes
+# Merge the two data frames based on "original_ID" and "freeze_thaw"
+merged_df <- merge(df_ICP_TC, df_IC_INC, by = c("original_ID", "freeze_thaw"))
+
+# Calculate bicarbonate concentration with charge balance calculation
+merged_df$bicarbonate_micromol <- merged_df$total_positive_charge - merged_df$total_negative_charge
+
+# Print the updated merged dataframe
+print(merged_df)
+
+# Mval for bicarb calculation
+# Define a vector with charges for each anion
+valence <- c(bicarbonate = 1)
+
+# Extract the relevant columns from the dataframe
+anion_cols <- c("bicarbonate_micromol")
+
+merged_df <- merged_df %>%
+  mutate(bicarbonate_mval = (bicarbonate_micromol/1000) * (1/valence["bicarbonate"]))
+
+```
+
+## Ternary Plot for Cl-, HCO3-, SO42- (ANIONS)
+```{r}
+# Filter data for freeze-thaw levels 0, 1, and 60
+df_filtered <- subset(merged_df, freeze_thaw %in% c(0,1,60))
+
+# Calculate ternary coordinates
+x <- df_filtered$chloride_mval / (df_filtered$chloride_mval + df_filtered$bicarbonate_mval + df_filtered$sulfate_mval)
+y <- df_filtered$bicarbonate_mval / (df_filtered$chloride_mval + df_filtered$bicarbonate_mval + df_filtered$sulfate_mval)
+z <- df_filtered$sulfate_mval / (df_filtered$chloride_mval + df_filtered$bicarbonate_mval + df_filtered$sulfate_mval)
+
+# Define shapes for different freeze-thaw cycles
+cycle_shapes <- c("0" = 1, "1" = 2, "60" = 3)  
+
+# Define colors for different locations
+location_colors <- c("East Lake Bonney" = "#66c2a5", "Taylor Glacier MS" = "#fc8d62", "Explorers Cove" = "#8da0cb", "Lake Fryxell" = "#e78ac3") 
+
+# Plot the ternary plot
+Coshocton_tern <- ggtern(data = df_filtered, aes(y = y, x = x, z = z, color = location.x, shape = factor(freeze_thaw))) +
+  geom_point(size = 3, stroke = 1.5, na.rm = TRUE) +
+  scale_color_manual(values = location_colors, name = "Location") +
+  scale_shape_manual(values = cycle_shapes, name = "Freeze-Thaw Cycle") +
+  theme_bw() +
+  Tlab("") + Llab("") + Rlab("") +
+  Larrowlab("Cl-") + Tarrowlab("HCO3-") + Rarrowlab("SO42-") +
+  theme_showarrows() +
+  theme_latex() +
+  theme(
+    axis.text = element_text(size = 20, color = "black"),  
+    axis.title = element_blank(), 
+    legend.text = element_text(size = 18, color = "black"), 
+    legend.title = element_text(size = 18, color = "black"), 
+    legend.background = element_rect(fill = "white", color = "black"), 
+    panel.margin = unit(1, "lines") 
+  )
+
+print(Coshocton_tern)
+
+# Save the plot with appropriate dimensions
+ggsave("Coshocton_tern_plot.png", plot = Coshocton_tern, width = 8, height = 6, units = "in", dpi = 300)
+
+
+```
+
+## Ternary Plot for Na+ + K+, Mg2+, and Ca2+ (CATIONS)
+```{r}
+
+library(ggtern)
+
+df_filtered <- subset(merged_df, freeze_thaw %in% c(0,1,60))
+
+xL <- (df_filtered$Na_mval + df_filtered$K_mval) / (df_filtered$Ca_mval + df_filtered$Mg_mval + df_filtered$K_mval + df_filtered$Na_mval)
+yT <- df_filtered$Mg_mval / (df_filtered$Ca_mval + df_filtered$Mg_mval + df_filtered$K_mval + df_filtered$Na_mval)
+zR <- df_filtered$Ca_mval / (df_filtered$Ca_mval + df_filtered$Mg_mval + df_filtered$K_mval + df_filtered$Na_mval)
+
+cycle_shapes <- c("0" = 1, "1" = 2, "60" = 3)  
+
+location_colors <- c("East Lake Bonney" = "#66c2a5", "Taylor Glacier MS" = "#fc8d62", "Explorers Cove" = "#8da0cb", "Lake Fryxell" = "#e78ac3") 
+
+Coshocton_tern <- ggtern(data = df_filtered, aes(x = xL, y = yT, z = zR, color = location.x, shape = factor(freeze_thaw))) +
+  geom_point(size = 3, stroke = 1.5, na.rm = TRUE) +
+  scale_color_manual(values = location_colors, name = "Location") +
+  scale_shape_manual(values = cycle_shapes, name = "Freeze-Thaw Cycle") +
+  theme_bw() +
+  Tlab("") + Llab("") + Rlab("") +
+  Larrowlab("Na + K") + Tarrowlab("Mg") + Rarrowlab("Ca") +
+  theme_showarrows() +
+  theme_latex() +
+  theme(
+    axis.text = element_text(size = 20, color = "black"), 
+    axis.title = element_blank(), 
+    legend.text = element_text(size = 18, color = "black"), 
+    legend.title = element_text(size = 18, color = "black"), 
+    legend.background = element_rect(fill = "white", color = "black"), 
+    panel.margin = unit(1, "lines") 
+  )
+
+print(Coshocton_tern)
+
+ggsave("Coshocton_tern_plot.png", plot = Coshocton_tern, width = 8, height = 6, units = "in", dpi = 300)
+
+```
+
+## Comparing this study to Olund ratios
+```{r}
+
+## Normal Scale
+
+# Set the maximum y-axis value
+max_y_value <- 100 
+
+# N:P Ratios for fryxell, bonney, and hoare
+common_ratio <- 1
+wales_ratio <- 3
+redfield_ratio <- 16
+
+# Create a scatter plot with different colors for each location, trendlines, and legend
+NP_ratio_streams <- ggplot(df_S_INC, aes(x = freeze_thaw, y = NP_ratio2, color = location)) +
+  geom_point(size = 2) +
+  geom_hline(aes(yintercept = common_ratio, linetype = "Commonwealth"), color = "black") +
+  geom_hline(aes(yintercept = wales_ratio, linetype = "Wales"), color = "black") +
+  geom_hline(aes(yintercept = redfield_ratio, linetype = "Redfield"), color = "black") +
+  labs(title = "N:P Plot with Stream Ratios",
+       x = "Freeze-Thaw Cycles",
+       y = "N:P",
+       color = "Location") +  # Legend label for location
+  coord_cartesian(ylim = c(0, max_y_value)) +  # Set maximum y-axis value
+  scale_linetype_manual(name = "Ratio Sites",
+                        values = c(Commonwealth = "dotted", Wales = "dashed", Redfield = "solid"),
+                        labels = c(Commonwealth = "Commonwealth Stream", Wales = "Wales Stream", Redfield = "Redfield Ratio")) +
+  theme_minimal() 
+
+print(NP_ratio_streams)
+ggsave(NP_ratio_streams, file = "NP_ratio_streams.png", dpi = 700,  width = 23, height = 13, units = "cm")
+
+################################################################################
+## Log scale: 
+
+# Set levels for freeze_thaw factor in df_ic
+df_S_INC$freeze_thaw <- factor(df_S_INC$freeze_thaw, levels = c("0", "1", "5", "10", "30", "60"))
+
+# Create a scatter plot with different colors for each location, trendlines, and legend
+NP_ratio_streams <- ggplot(df_S_INC, aes(x = freeze_thaw, y = NP_ratio2, color = location)) +
+  geom_point(size = 3) +
+  geom_hline(aes(yintercept = common_ratio, linetype = "Commonwealth"), color = "black") +
+  geom_hline(aes(yintercept = wales_ratio, linetype = "Wales"), color = "black") +
+  geom_hline(aes(yintercept = redfield_ratio, linetype = "Redfield"), color = "black") +
+  labs(title = "N:P Plot with Stream Ratios",
+       x = "Freeze-Thaw Cycles",
+       y = "N:P",
+       color = "Location") +  # Legend label for location
+  scale_y_log10() +  # Set y-axis to log scale
+  scale_linetype_manual(name = "Ratio Sites",
+                        values = c(Commonwealth = "dotted", Wales = "dashed", Redfield = "solid"),
+                        labels = c(Commonwealth = "Commonwealth Stream", Wales = "Wales Stream", Redfield = "Redfield Ratio")) +
+  scale_color_manual(values = location_colors, name = "Location") +  # Set custom colors for locations
+  theme_minimal() +
+  theme(text=element_text(size=20))
+
+print(NP_ratio_streams)
+ggsave(NP_ratio_streams, file = "NP_ratio_streams.png", dpi = 700,  width = 23, height = 13, units = "cm")
+
+```
+
+## Aluminosilicate Dissolution  
+## Creating new dataframe
+```{r}
+# Create a new data frames
+
+df_new <- df_all[df_all$method == "TC",]
+df_new$SiAl_ratio <- df_new$Si_micromol / df_new$Al_micromol
+df_new <- df_new[df_new$SiAl_ratio <= 1000,]
+
+df_new$SiK_ratio <- df_new$Si_micromol / df_new$K_micromol
+df_new <- df_new[df_new$SiK_ratio <= 1000,]
+
+## Log scale:
+location_colors <- c("East Lake Bonney" = "#66c2a5", "Taylor Glacier MS" = "#fc8d62", "Explorers Cove" = "#8da0cb", "Lake Fryxell" = "#e78ac3")  # Define colors based on location
+
+# Set levels for freeze_thaw factor in df_ic
+df_new$freeze_thaw <- factor(df_new$freeze_thaw, levels = c("0", "1", "5", "10", "30", "60"))
+
+# Create a scatter plot with different colors for each location, trendlines, and legend
+ggplot(df_new, aes(x = freeze_thaw, y = SiAl_ratio, color = location)) +
+  geom_point(size = 3) +
+  labs(title = "Si:Al vs Freeze-Thaw Cycles",
+       x = "Freeze-Thaw Cycles",
+       y = "Si:Al",
+       color = "Location") +  # Legend label for location
+  scale_y_log10() +  # Set y-axis to log scale
+  scale_color_manual(values = location_colors, name = "Location") +  # Set custom colors for locations
+  theme_minimal(base_size = 20)  +
+  theme(
+      # axis.line = element_line(color = "black"),
+      axis.text.x = element_text(vjust = 0.5, hjust = 1, angle = 0, face="bold", size = 15),
+      axis.text.y = element_text(color = "black", size = 15),
+      legend.position = "none", 
+      plot.title = element_text(hjust = 0.5, face = "bold", color = "black", size = 20), # Center and bold titles
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1))
+# ggsave(NP_ratio_redfield, file = "NP_ratio_redfield.png", dpi = 700,  width = 23, height = 13, units = "cm")
+
+
+############################################################################################
+
+# Create a scatter plot with different colors for each location, trendlines, and legend
+ggplot(df_new, aes(x = freeze_thaw, y = SiK_ratio, color = location)) +
+  geom_point(size = 3) +
+  labs(title = "Si:K vs Freeze-Thaw Cycles",
+       x = "Freeze-Thaw Cycles",
+       y = "Si:K",
+       color = "Location") +  # Legend label for location
+  scale_y_log10() +  # Set y-axis to log scale
+  scale_color_manual(values = location_colors, name = "Location") +  # Set custom colors for locations
+  theme_minimal(base_size = 20)  +
+  theme(
+      # axis.line = element_line(color = "black"),
+      axis.text.x = element_text(vjust = 0.5, hjust = 1, angle = 0, face="bold", color = "black", size = 15),
+      axis.text.y = element_text(color = "black", size = 15),
+      legend.position = "none", 
+      plot.title = element_text(hjust = 0.5, face = "bold", color = "black", size = 20), # Center and bold titles
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1))
+# ggsave(NP_ratio_redfield, file = "NP_ratio_redfield.png", dpi = 700,  width = 23, height = 13, units = "cm")
+
+```
+
+## Control Figures
+
+# Procedural Controls
+```{r}
+# Load the libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(patchwork)
+
+# Define custom colors for controls
+custom_colors <- c("1" = "#66c2a5", "60" = "#00441b", "100" = "black", "200" = "grey")
+
+# Define expressions for axis labels
+nutrient_labels <- c(
+  nitrate_micromol = expression(bold(NO[3]^{"-"} + NO[2]^{"-"})),
+  ammonia_micromol = expression(bold(NH[3]^{"-"})),
+  phosphate_micromol = expression(bold(PO[4]^{"3-"}))
+)
+
+ion_labels <- c(
+  fluoride_micromol = expression(bold(F^{"-"})),
+  chloride_micromol = expression(bold(Cl^{"-"})),
+  sulfate_micromol = expression(bold(SO[4]^{"2-"})),
+  Ca_micromol = expression(bold(Ca^{"2+"})),
+  K_micromol = expression(bold(K^{"+"})),
+  Mg_micromol = expression(bold(Mg^{"2+"})),
+  Na_micromol = expression(bold(Na^{"+"}))
+)
+
+metal_labels <- c(
+  Al_micromol = expression(bold(Al)),
+  Ba_micromol = expression(bold(Ba)),
+  Fe_micromol = expression(bold(Fe)),
+  Si_micromol = expression(bold(Si)),
+  Zn_micromol = expression(bold(Zn))
+)
+
+# Y-axis label
+y_axis_label <- expression(bold("Concentration (umol g"^-1*")"))
+
+# Define the groups of variables
+nutrients <- c("nitrate_micromol", "ammonia_micromol", "phosphate_micromol")
+ions <- c("fluoride_micromol", "chloride_micromol", "sulfate_micromol", 
+          "Ca_micromol", "K_micromol", "Mg_micromol", "Na_micromol")
+metals <- c("Al_micromol", "Ba_micromol", "Fe_micromol", "Si_micromol", "Zn_micromol")
+
+# Create a function to plot with different y-limits
+create_plot <- function(data, vars, var_labels, color_var, color_values, title) {
+  # Ensure that all columns in "vars" exist in the dataframe
+  #valid_vars <- vars[vars %in% names(data)]
+  
+  # Check if freeze_thaw is present in the dataframe
+  if (!"freeze_thaw" %in% names(data)) {
+    stop("The 'freeze_thaw' column is not present in the dataframe.")
+  }
+  
+  # Reshape the data
+  data_long <- data %>% 
+    select(all_of(valid_vars), freeze_thaw) %>% 
+    pivot_longer(cols = all_of(valid_vars), names_to = "variable", values_to = "value")
+  
+  # Check if variable column is correctly recognized as factor with specified levels
+  data_long <- data_long %>%
+    mutate(variable = factor(variable, levels = valid_vars))
+  
+  # Calculate maximum value for y-limit
+  max_value <- max(data_long$value, na.rm = TRUE)
+  
+  # Print data_long for debugging/QC
+  print(head(data_long))
+  
+  # Create the plot
+  ggplot(data_long, aes(x = variable, y = value, fill = factor(freeze_thaw))) +
+    geom_bar(stat = "identity", position = "dodge", color = "black", size = 0.5) +
+    scale_fill_manual(values = color_values) +
+    labs(x = NULL, y = NULL, title = title, fill = "Freeze_thaw") +
+    theme_minimal(base_size = 15) +
+    theme(
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, color = "black"),
+      axis.text.y = element_text(color = "black"),
+      axis.title.y = element_blank(),
+      plot.title = element_text(hjust = 0.5),
+      legend.position = "none",
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1) # Black border around each plot
+    ) +
+    scale_x_discrete(labels = var_labels) +
+    ylim(0, max_value * 1.1)  # Add a little padding to the max value
+}
+
+
+# Create the plots
+plot1 <- create_plot(df_pcontrols %>% filter(comments == "Water_GFF"), nutrients, nutrient_labels, "freeze_thaw", custom_colors, "GFF Leach")
+plot2 <- create_plot(df_pcontrols %>% filter(comments == "Water"), nutrients, nutrient_labels, "freeze_thaw", custom_colors, "Bottle Leach")
+plot3 <- create_plot(df_pcontrols %>% filter(comments %in% c("Water_through_GFF", "Water_through_nucleopore")), nutrients, nutrient_labels, "freeze_thaw", custom_colors, "Filter Leach")
+
+plot4 <- create_plot(df_pcontrols %>% filter(comments == "Water_GFF"), ions, ion_labels, "freeze_thaw", custom_colors, "")
+plot5 <- create_plot(df_pcontrols %>% filter(comments == "Water"), ions, ion_labels, "freeze_thaw", custom_colors, "")
+plot6 <- create_plot(df_pcontrols %>% filter(comments %in% c("Water_through_GFF", "Water_through_nucleopore")), ions, ion_labels, "freeze_thaw", custom_colors, "")
+
+plot7 <- create_plot(df_pcontrols %>% filter(comments == "Water_GFF"),  metals, metal_labels, "freeze_thaw", custom_colors, "")
+plot8 <- create_plot(df_pcontrols %>% filter(comments == "Water"), metals, metal_labels, "freeze_thaw", custom_colors, "")
+plot9 <- create_plot(df_pcontrols %>% filter(comments %in% c("Water_through_GFF", "Water_through_nucleopore")), metals, metal_labels, "freeze_thaw", custom_colors, "")
+
+# Arrange the plots
+final_plot <- (plot1 | plot2 | plot3) / 
+              (plot4 | plot5 | plot6) / 
+              (plot7 | plot8 | plot9) +
+              plot_layout(guides = "collect") & 
+              theme(plot.title = element_text(hjust = 0.5, color = "black", size = 15))
+
+# Add the shared y-axis label
+final_plot <- final_plot & labs(y = y_axis_label)
+
+# Save the final plot
+ggsave("Control_Data.png", plot = final_plot, dpi = 600, width = 18, height = 24, units = "cm")
+
+# Display the final plot
+print(final_plot)
+
+```
+
+# Reactivity Controls 
+```{r}
+library(ggplot2)
+library(cowplot)
+
+# List of nutrients
+analyte <- c("nitrate_micromol", "ammonia_micromol", "phosphate_micromol", "fluoride_micromol", "Ca_micromol", "K_micromol", "Na_micromol", "Al_micromol", "Fe_micromol", "Si_micromol")
+
+# Custom color palette
+custom_colors <- c("1" = "#66c2a5", "5" = "#41ae76", "10" = "#238b45", "30" = "#006d2c", "60" = "#00441b")
+
+# Nutrient names with subscripts and superscripts
+analyte_names <- list(
+  nitrate_micromol = expression(bold(NO[3]^{"-"} + NO[2]^{"-"})),
+  ammonia_micromol = expression(bold(NH[3]^{"-"})),
+  phosphate_micromol = expression(bold(PO[4]^{"3-"})),
+  fluoride_micromol = expression(bold(F^{"-"})),
+  Ca_micromol = expression(bold(Ca^{"2+"})),
+  K_micromol = expression(bold(K^{"+"})),
+  Na_micromol = expression(bold(Na^{"+"})),
+  Al_micromol = expression(bold(Al)),
+  Fe_micromol = expression(bold(Fe)),
+  Si_micromol = expression(bold(Si))
+)
+
+# Create Plot
+create_plot <- function(analyte) {
+  ggplot(df_rcontrols, aes_string(x = "factor(method_2)", y = analyte, fill = "factor(freeze_thaw)")) +
+    geom_bar(stat = "identity", position = "dodge", na.rm = TRUE, color = "black", size = 0.5) +
+    scale_fill_manual(values = custom_colors, name = "Freeze-Thaw") +
+    labs(fill = "Freeze_Thaw") +
+    ggtitle(analyte_names[[analyte]]) + # Titles using the expressions
+    theme_minimal(base_size = 15) +
+    scale_x_discrete(labels = c("Control" = "Thaw Control", "INC" = "Freeze Thaw")) +  # Change the x-axis labels here
+    theme(
+      axis.text.x = element_text(vjust = 0.5, hjust = 0.5, color = "black", angle = 0),
+      axis.text.y = element_text(color = "black"),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none", # Hide legend for individual plots
+      plot.title = element_text(hjust = 0.5, face = "bold"), # Center and bold titles
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "black", fill = NA, size = 1) # Black border around each plot
+    )
+}
+
+# Create plots for each analyte
+plots <- lapply(analyte, create_plot)
+
+# Empty plots for margins
+empty_plot_left <- ggplot() + theme_void()
+empty_plot_bottom <- ggplot() + theme_void()
+
+# Arrange plots in a grid with empty margins
+combined_plot <- plot_grid(
+  plot_grid(empty_plot_left, plot_grid(plotlist = plots, ncol = 2, nrow = 5), ncol = 2, rel_widths = c(0.1, 1.7)),
+  empty_plot_bottom,
+  ncol = 1,
+  rel_heights = c(1, 0.05)
+)
+
+# Add y-axis and x-axis labels using draw_label
+final_plot_with_margin <- ggdraw(combined_plot) +
+  draw_label(expression(bold("Concentration (µmol g"^-1*")")), x = 0.03, y = 0.5, angle = 90, hjust = 0.5, vjust = 0.5, size = 20) +
+  draw_label(expression(bold("Method")), x = 0.5, y = 0.02, hjust = 0.5, vjust = -0.5, size = 20)
+
+# Save the final plot
+ggsave(final_plot_with_margin, file = "rcontrol_plots.png", dpi = 600, width = 18, height = 24, units = "cm")
+```
+
+
+
